@@ -1,0 +1,103 @@
+首先观察bomb.c，发现可以在调用./bomb后跟一参数表示输入文件（如./bomb test.txt），方便调试。此外并无太多内容，只是顺序执行phase_1到5并判断是否引爆。
+测试时直接运行bomb文件，并不需要修改代码，bomb.c仅作为参考。
+
+Phase 1:
+首先objdump -d bomb test.asm将其转为汇编码。
+观察到phase_1中有如下句子：
+ 8048efb:	c7 44 24 04 54 9d 04 	movl   $0x8049d54,0x4(%esp)
+读出此地址中的值，然后进行如下判断：
+ 8048f09:	e8 71 01 00 00       	call   804907f <strings_not_equal>
+ 8048f0e:	85 c0                	test   %eax,%eax
+ 8048f10:	74 05                	je     8048f17 <phase_1+0x22>
+调用函数strings_not_equal，不相等则：
+ 8048f12:	e8 78 08 00 00       	call   804978f <explode_bomb>
+引爆炸弹，所以直接使用gdb bomb，x /s 0x8049d54查询此处字符串值，并作为第一句输入即可，在此炸弹中值为"The future will be better tomorrow."
+
+
+Phase 2:
+汇编码较长，但是可以看到其中调用了read_six_numbers，在此函数中读入六个数字：
+ 8049802:	c7 44 24 04 58 9f 04 	movl   $0x8049f58,0x4(%esp)
+ 8049809:	08 
+ 804980a:	8b 45 08             	mov    0x8(%ebp),%eax
+ 804980d:	89 04 24             	mov    %eax,(%esp)
+ 8049810:	e8 13 f2 ff ff       	call   8048a28 <sscanf@plt>
+ 8049815:	83 f8 05             	cmp    $0x5,%eax
+观察此句，发现代码判断返回值是否大于5,若不是则引爆炸弹，读入后返回phase_2:
+ 8048e61:	8b 03                	mov    (%ebx),%eax
+ 8048e63:	3b 43 0c             	cmp    0xc(%ebx),%eax
+ 8048e66:	74 05                	je     8048e6d <phase_2+0x35>
+ 8048e68:	e8 22 09 00 00       	call   804978f <explode_bomb>
+看到此处判断ebx与ebx+0xc位是否相等，不相等则引爆，即a[i]与a[i+3]是否相等，i为0。
+ 8048e6d:	03 33                	add    (%ebx),%esi
+ 8048e6f:	83 c3 04             	add    $0x4,%ebx
+ 8048e72:	39 fb                	cmp    %edi,%ebx
+ 8048e74:	75 eb                	jne    8048e61 <phase_2+0x29>
+ 8048e76:	85 f6                	test   %esi,%esi
+此处较为麻烦，将esi的值加上a[i]后，i=i+1，若i等于edi指向位置时结束循环。edi查询为-10896（在此bomb中即a[4]所指向的位置）。而8048e76这句判断esi是否为0，esi记录循环中所有经过的a[i]总和（每次加上ebx内的值）。
+所以转为伪代码如下：
+i = 0;
+do
+    if (a[i]!=a[i+3]) then explode!;
+    i = i+1;
+until i==4;
+即是说输入的三个数得是a b c a b c格式，且a+b+c!=0，此处我代入0 1 2 0 1 2。
+
+
+Phase_3:
+ 8048f94:	e8 8f fa ff ff       	call   8048a28 <sscanf@plt>
+ 8048f99:	83 f8 01             	cmp    $0x1,%eax
+ 8048f9c:	7f 05                	jg     8048fa3 <phase_3+0x32>
+读入的参数大于一个
+ 8048fa3:	83 7d f4 07          	cmpl   $0x7,-0xc(%ebp)
+ 8048fa7:	90                   	nop
+ 8048fa8:	77 79                	ja     8049023 <phase_3+0xb2>
+读入数字测试发现-0xc(%ebp)为第一个参数，大于7则跳到8049023，即爆炸。
+我尝试在debug中输入1,然后运行到如下语句：
+ 8049033:	3b 5d f0             	cmp    -0x10(%ebp),%ebx
+ 8049036:	66 90                	xchg   %ax,%ax
+ 8049038:	74 0b                	je     8049045 <phase_3+0xd4>
+此处输出%ebx为-158,-0x10(%ebp)为第二个参数，不相等则爆炸
+于是输入1 -158即通过
+
+
+Phase_4:
+ 8048f35:	e8 ee fa ff ff       	call   8048a28 <sscanf@plt>
+ 8048f3a:	83 f8 01             	cmp    $0x1,%eax
+ 8048f3d:	75 06                	jne    8048f45 <phase_4+0x2c>
+ 8048f3f:	83 7d f4 00          	cmpl   $0x0,-0xc(%ebp)
+ 8048f43:	7f 08                	jg     8048f4d <phase_4+0x34>
+此题仅输入1个参数，否则爆炸，输入第一个数不大于0则爆炸。然后调用func4，此函数较为复杂，但是其中有一个值为乘法：
+ 8048c8f:	0f af c3             	imul   %ebx,%eax
+且最终将用此函数的返回值与0x9d80，即40320即8!，可以猜测func4函数求的是n!，所以此处尝试代入8，直接就通过了。
+
+
+Phase_5:
+ 8048e9b:	e8 c0 01 00 00       	call   8049060 <string_length>
+ 8048ea0:	83 f8 06             	cmp    $0x6,%eax
+ 8048ea3:	74 05                	je     8048eaa <phase_5+0x1e>
+汇编码的意思似乎是判断字串长度需要为6,否则爆炸。
+中间循环每个字符进行了某种操作后：
+ 8048ed1:	c7 44 24 04 78 9d 04 	movl   $0x8049d78,0x4(%esp)
+ ....
+ 8048edf:	e8 9b 01 00 00       	call   804907f <strings_not_equal>
+然后与0x8049d78位置进行比较，若不相等则爆炸，此位置的字串是saints。
+至于其中的某种操作，看起来像是一种字符映射：
+ 8048eb7:	0f be 0c 1e          	movsbl (%esi,%ebx,1),%ecx
+ 8048ebb:	83 e1 0f             	and    $0xf,%ecx
+ 8048ebe:	0f b6 0c 08          	movzbl (%eax,%ecx,1),%ecx
+ 8048ec2:	88 0c 1a             	mov    %cl,(%edx,%ebx,1)
+将a[i] & 15的值存入ecx，把trans[ecx]的值存入edx所在位置。
+尝试一下得到：abcdef->srveaw, ghijkl->hobpnu, mnopqr->tfgisr
+根据这些值，可代入aepkma，以上（->saints）
+
+
+Phase_6:
+首先从a[0]读出后，判断a[0]+esi*4-1若大于5则爆炸。esi似乎是从0循环到5。
+然后是判断a[i]与a[i+1]必须不同，且不大于六，否则爆炸。
+所以应该是一个排列，并且根据结尾8048e1e的判断，得到的结尾映射应该是一个递减的序列：
+通过计算发现1到6映射过去分别是428,333,949,943,558,706，递增的结果即是3 4 6 5 1 2
+以上全部六个完成。
+
+
+Secret_Phase:
+在phase_defused中有一句call secret_phase，在0x804976c，可在此函数末尾暂停一下，强行jump到secret_phase。
