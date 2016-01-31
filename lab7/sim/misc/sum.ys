@@ -1,0 +1,48 @@
+/* 5130309006 TJG */
+
+init:
+	irmovl Stack, %esp
+	irmovl Stack, %ebp
+	call Main
+	halt
+
+.align 4
+ele1:
+.long 0x00a
+.long ele2
+ele2:
+.long 0x0b0
+.long ele3
+ele3:
+.long 0xc00
+.long 0
+
+Main:
+	pushl	%ebp
+	rrmovl	%esp, %ebp
+	irmovl	ele1, %eax
+	pushl	%eax
+	call	sum_list
+	rrmovl	%ebp, %esp
+	popl	%ebp
+	ret
+
+sum_list:
+	pushl	%ebp
+	rrmovl	%esp, %ebp
+	irmovl	0, %eax
+	mrmovl	8(%ebp), %edx
+LOOP:
+	andl	%edx, %edx
+	je	END
+	mrmovl	(%edx), %ecx
+	addl	%ecx, %eax
+	mrmovl	4(%edx), %edx
+	jmp	LOOP
+END:
+	popl	%ebp
+	ret
+
+# Stack
+	.pos 0x100
+Stack:

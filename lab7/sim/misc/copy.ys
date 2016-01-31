@@ -1,0 +1,61 @@
+/* 5130309006 TJG */
+
+	.pos 0
+init:
+	irmovl Stack, %esp
+	irmovl Stack, %ebp
+	call Main
+	halt
+	
+.align 4
+src:
+.long 0x00a
+.long 0x0b0
+.long 0xc00
+
+dest:
+.long 0x111
+.long 0x222
+.long 0x333
+	
+#void main()
+Main:
+	pushl %ebp
+	rrmovl %esp, %ebp
+	irmovl $3, %eax
+	pushl %eax
+	irmovl dest, %eax
+	pushl %eax
+	irmovl src, %eax
+	pushl %eax
+	call copy
+	rrmovl %ebp, %esp
+	popl %ebp
+	ret
+	
+copy:
+	pushl %ebp
+	rrmovl %esp, %ebp
+	xorl %eax, %eax			#int result = 0;
+	mrmovl 16(%ebp), %ebx	#ld. len
+	mrmovl 12(%ebp), %edx	#ld. dest
+	mrmovl 8(%ebp), %ecx	#ld. src
+LStart:
+	andl %ebx, %ebx
+	jle LEnd
+	mrmovl (%ecx), %esi		#int val = *src;
+	irmovl $4, %edi
+	addl %edi, %ecx			#src++;
+	rmmovl %esi, (%edx)		#*dest = val;
+	addl %edi, %edx			#dest++;
+	xorl %esi, %eax			#result ^= val;
+	irmovl $1, %edi
+	subl %edi, %ebx			#len--;
+	jmp LStart
+LEnd:
+	popl %ebp
+	ret
+
+# Stack
+	.pos 0x100
+Stack:
